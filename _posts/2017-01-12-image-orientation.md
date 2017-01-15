@@ -41,7 +41,7 @@ Finally, let's summarize the three most important type of layers that we will se
 
 **Fully connected layer**: this is the simplest type of layer. This layer connects all its inputs to all the outputs of the the preceding layer.
 
-![Basic computation on a fully connected layer]({{ site.baseurl }}/img/image-orientation/fc.jpg)
+![Basic computation on a fully connected layer]({{ site.baseurl }}/img/image-orientation/fully-connected.jpg)
 
 The output of each neuron is simply a weighted sum of its inputs. Considering the image above, representing a fully connected type of connection, the output of each neuron is as follows:
 
