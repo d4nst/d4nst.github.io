@@ -102,16 +102,15 @@ So now we know the format of our data, but how do we get it? Luckily, for this p
 
 ![Left: Sample from the MNIST dataset. Right: Sample from the Google Street View dataset]({{ site.baseurl }}/img/image-orientation/mnist-street-view.jpg)
 
-Keras makes it very easy to write data generators by extending one of the provided classes. In the code below you can see a basic implementation of a data generator that takes a NumPy array of input images, and produces batches of rotated images and their respective rotation angles on-the-fly.
+Keras makes it very easy to write data generators by extending one of the provided classes. In the code below you can see a basic implementation of a data generator that takes a NumPy array of input images, and produces batches of rotated images and their respective rotation angles on-the-fly. This generator can also preprocess the input images if needed. 
 
 ```python
 class RotNetDataGenerator(Iterator):
 
-    def __init__(self, input, input_shape=None, batch_size=64,
-                 one_hot=True, shuffle=False):
+    def __init__(self, input, batch_size=64, one_hot=True, 
+                 preprocess_func=None, shuffle=False):
 
         self.images = None
-        self.input_shape = input_shape
         self.batch_size = batch_size
 
         self.images = input
@@ -147,6 +146,10 @@ class RotNetDataGenerator(Iterator):
             # convert the numerical labels to binary labels
             batch_y = to_categorical(batch_y, 360)
 
+            # preprocess input images
+            if self.preprocess_func:
+                batch_x = self.preprocess_func(batch_x)
+
         return batch_x, batch_y
 ```
 
@@ -163,17 +166,17 @@ After loading the training and test sets, we need to add a new dimension to the 
 
 ```python
 # add dimension to account for the channels (assuming tensorflow ordering)
-X_train = np.expand_dims(X_train, axis=3).astype('float32') / 255
-X_test = np.expand_dims(X_test, axis=3).astype('float32') / 255
+X_train = np.expand_dims(X_train, axis=3).astype('float32')
+X_test = np.expand_dims(X_test, axis=3).astype('float32')
 ```
 
-The shape of the training set `X_train` after adding the new dimension is `(60000, 28, 28, 1)`, and the shape of the test set `X_test` is  `(10000, 28, 28, 1)`. In other words, we have 60000 and 10000 greyscale images of size 28 &times; 28 pixels for training and testing respectively. In the code above we also did some preprocessing to the data by changing the range of the image values to be constrained between 0 and 1.
+The shape of the training set `X_train` after adding the new dimension is `(60000, 28, 28, 1)`, and the shape of the test set `X_test` is  `(10000, 28, 28, 1)`. In other words, we have 60000 and 10000 greyscale images of size 28 &times; 28 pixels for training and testing respectively.
 
 Now that we have loaded the data, let's define our first convolutional neural network. How do we do this? If you are a beginner, the easiest way is to copy the architecture used in a another example. In this case, I am using the CNN architecture used in the [Keras example to classify the digits in the MNIST dataset](https://GitHub.com/fchollet/keras/blob/master/examples/mnist_cnn.py):
 
 ```python
 # number of convolutional filters to use
-nb_filters = 32
+nb_filters = 64
 # size of pooling area for max pooling
 pool_size = (2, 2)
 # convolution kernel size
@@ -210,9 +213,11 @@ model.compile(loss='categorical_crossentropy',
               metrics=[angle_error])
 ```
 
-During the compilation step, we need to define the loss function, optimizer and metrics that we want to use during the training phase. If we are doing classification, we will typically use `'categorical_crosentropy'` as the loss function. The optimizer is the method used to perform the weight updates. *Adam* is a good default optimizer that usually works well without extra configuration. Finally, we are using a function called `angle_error` as a metric. Metrics are used to monitor the accuracy of the model during training. The `angle_error` metric will be in charge of periodically computing the angle difference between predicted angles and true angles. Note that the `angle_error` function is not defined in Keras, but you can find it in the [RotNet repository](https://GitHub.com/d4nst/RotNet/blob/master/utils.py#L15). During training, we will monitor the loss value and the angle error so that we can stop the process whenever they stop improving in the validation set. 
+During the compilation step, we need to define the loss function, optimizer and metrics that we want to use during the training phase. If we are doing classification, we will typically use `'categorical_crosentropy'` as the loss function. The optimizer is the method used to perform the weight updates. *Adam* is a good default optimizer that usually works well without extra configuration. Finally, we are using a function called `angle_error` as a metric. Metrics are used to monitor the accuracy of the model during training. The `angle_error` metric will be in charge of periodically computing the angle difference between predicted angles and true angles. Note that the `angle_error` function is not defined in Keras, but you can find it in the [RotNet repository](https://GitHub.com/d4nst/RotNet/blob/master/utils.py#L15). During training, we will monitor the loss value and the angle error so that we can finish the process whenever they stop improving in the validation set. 
 
-Finally, we are ready to train the network!
+Before I show you the code to train the network, I wanted to point out an specific issue of our data generation approach. The rotation operation involves interpolating pixel values when the rotation angle is different than 90, 180 or 270 degrees. At low resolutions, this will introduce interpolation arfefacts that could be learnt by the network. If that happens, the network would fail to predict the rotation angle when these artefacts are not present, for example if the original image was already rotated or if it was rotated at a higher resolution. In order to solve this issue, we will binarize the input images after rotating them, i.e. values below a certain pixel intensity will be converted to 0, and values above it will be converted to 1. In this way, we get rid of the interpolated pixels and therefore ensure that the network is not making predictions based on them.
+
+And now, we are ready to train the network!
 
 ```python
 # training parameters
@@ -232,13 +237,15 @@ model.fit_generator(
     RotNetDataGenerator(
         X_train,
         batch_size=batch_size,
+        preprocess_func=binarize_images,
         shuffle=True
     ),
     samples_per_epoch=nb_train_samples,
     nb_epoch=nb_epoch,
     validation_data=RotNetDataGenerator(
         X_test,
-        batch_size=batch_size
+        batch_size=batch_size,
+        preprocess_func=binarize_images
     ),
     nb_val_samples=nb_test_samples,
     verbose=1,
@@ -246,9 +253,11 @@ model.fit_generator(
 )
 ```
 
-The `fit_generator` method will train the model on data generated batch-by-batch by our previously defined `RotNetDataGenerator` for a number of epochs. In general, an epoch is completed whenever a network has been fed with the whole training set. Since we are generating data on the fly, we need to explicitly define the `samples_per_epoch` parameter. We also shuffle the data after each epoch, so that batches with different images are generated each time. The `validation_data` parameter takes another `RotNetDataGenerator` object which is in charge of generating the validation images that we will use to periodically evaluate the model during training. Finally, I have also added some extra functionality with Keras callbacks. The `ModelCheckpoint` callback is used to save the model to disk. With the `save_best_only` option we only save the model whenever the accuracy improves. `EarlyStopping` will stop the training process whenever a monitored value has stopped improving. By default, it will monitor the loss value in the validation set. The `TensorBoard` callback is used to plot the monitored values using [TensorFlow's TensorBoard](https://www.tensorflow.org/how_tos/summaries_and_tensorboard/).
+The `fit_generator` method will train the model on data generated batch-by-batch by our previously defined `RotNetDataGenerator` for a number of epochs. In general, an epoch is completed whenever a network has been fed with the whole training set. Since we are generating data on the fly, we need to explicitly define the `samples_per_epoch` parameter. We also shuffle the data after each epoch, so that batches with different images are generated each time. The `validation_data` parameter takes another `RotNetDataGenerator` object which is in charge of generating the validation images that we will use to periodically evaluate the model during training. Note that I am passing the `binarize_images` function defined [here](https://github.com/d4nst/RotNet/blob/master/utils.py#L24) to both `RotNetDataGenerator` objects in order to preprocess the input images as explained above.
 
-After 50 epochs, the network achieves an average angle error of 2-3 degrees in the validation set. That's quite good! Once the training is finished, we can use the model to predict the rotation angle of any image from the MNIST dataset by using the `predict` method. 
+I have also added some extra functionality with Keras callbacks. The `ModelCheckpoint` callback is used to save the model to disk. With the `save_best_only` option we only save the model whenever the accuracy improves. `EarlyStopping` will finish the training process whenever a monitored value has stopped improving. By default, it will monitor the loss value in the validation set. The `TensorBoard` callback is used to plot the monitored values using [TensorFlow's TensorBoard](https://www.tensorflow.org/how_tos/summaries_and_tensorboard/).
+
+After 50 epochs, the network achieves an **average angle error of 6-7 degrees** in the validation set. That's pretty good! Specially considering that a lot of the original samples in the MNIST dataset are not straight and that some digits can be written upside down (0, 1, 8) or can be easily confused if they are (6 and 9). Once the training is finished, we can use the model to predict the rotation angle of any image from the MNIST dataset by using the `predict` method. 
 
 ```python
 # randomly rotate an image
@@ -259,15 +268,17 @@ print('True angle: ', angle)
 
 # add dimension to account for the batch size
 rotated_img = np.expand_dims(rotated_img, axis=0)
+# binarize image
+rotated_img_bin = binarize_images(rotated_img)
 # predict rotation angle
-output = model.predict(rotated_img)
+output = model.predict(rotated_img_bin)
 predicted_angle = np.argmax(output)
 print('Predicted angle: ', predicted_angle)
 ```
 
-We can use the predicted angle above to rotate the image in the opposite direction in order to correct the orientation of the image. Let's look at some examples:
+We can use the predicted angle as computed above to rotate the image in the opposite direction in order to correct the orientation of the image. Let's look at some examples:
 
-![RotNet test examples from the MNIST dataset.]({{ site.baseurl }}/img/image-orientation/mnist-test.png)
+![RotNet test examples from the MNIST dataset.]({{ site.baseurl }}/img/image-orientation/mnist-test.jpg)
 
 You can generate more of these examples by yourself using the `display_examples` function as shown in this [jupyter notebook](https://GitHub.com/d4nst/RotNet/blob/master/test/test_mnist.ipynb).
 
@@ -288,7 +299,7 @@ data_path = ... # location where you want to save the data
 train_filenames, test_filenames = get_street_view_filenames(data_path)
 ```
 
-Note that in this case we are not loading all the images into memory as we did on the MNIST example. If we did that, we would run out of memory because the images have a much higher resolution. Instead, we are going to modify the `RotNetDataGenerator` to allow loading, cropping and resizing images before rotating them. Cropping is needed because the network will only accept square images and the images in the Google Street View dataset are rectangular. We need to crop the centre of the image (or the right-hand side) because all the images have an overlaid icon on the upper-left side and we don't want the network to only look for the position of that icon to predict the rotation angle. Resizing is needed in order to adapt the images to the input shape needed by the network. We also need to crop the image after rotation as described [here](http://stackoverflow.com/questions/16702966/rotate-image-and-crop-out-black-borders). This is because if we left out the black borders, the network could simply figure out how to rotate the images based on that. For a similar reason, we also need to rotate the images before resizing them, as the rotation operation introduces interpolation artefacts that at low resolution can also be learnt by the network.
+Note that in this case we are not loading all the images into memory as we did on the MNIST example. If we did that, we would run out of memory because the images have a much higher resolution. Instead, we are going to modify the `RotNetDataGenerator` to allow loading, cropping and resizing images. Cropping is needed because the network will only accept square images and the images in the Google Street View dataset are rectangular. We need to crop the centre of the image (or the right-hand side) because all the images have an overlaid icon on the upper-left side and we don't want the network to only look for the position of that icon to predict the rotation angle. Resizing is needed in order to adapt the images to the input shape needed by the network. We also need to crop the image after rotation as described [here](http://stackoverflow.com/questions/16702966/rotate-image-and-crop-out-black-borders). This is because if we left out the black borders, the network could simply figure out the rotation angle based on that. Moreover, it's important to rotate the images before resizing them to avoid having interpolation artefacts at low resolutions (since we can't binarize them as we did with the MNIST samples).
 
 All of these operations can be achieved by replacing the `rotate` function in `RotNetDataGenerator` by the following `generate_rotated_image` function:
 
@@ -321,7 +332,7 @@ def generate_rotated_image(image, angle, size=None, crop_center=False,
     return image
 ```
 
-[Here](https://GitHub.com/d4nst/RotNet/blob/master/utils.py#L122) you can see the full implementation of the `RotNetDataGenerator` that also accepts image file paths as input. If you run the code by yourself you might find that the generator is somewhat slow. This is because loading high resolution images and applying all the preprocessing operations on-the-fly is a costly operation. A better option would be to preprocess all the images and save them to disk, for example by generating 359 rotated versions out of each single image. For the sake of brevity, I have decided to keep using the generator approach. 
+[Here](https://GitHub.com/d4nst/RotNet/blob/master/utils.py#L129) you can see the full implementation of the `RotNetDataGenerator` that also accepts image file paths as input. If you run the code by yourself you might find that the generator is somewhat slow. This is because loading high resolution images and applying all the preprocessing operations on-the-fly is a costly operation. A better option would be to preprocess all the images and save them to disk, for example by generating 359 rotated versions out of each single image. For the sake of brevity, I have decided to keep using the generator approach. 
 
 Since the data in this example is more complicated, we will use a CNN architecture with more layers. In particular, we will use a deep residual network with 50 layers known as *ResNet50*. Luckily, Keras already comes with this model predefined, so we don't have to do it ourselves. Even if you don't know what the *residual* part means, we can train this network in a similar way as we did with the MNIST example. Keras also offers the possibility of loading this network with a model pre-trained on [ImageNet](http://image-net.org/) data (ImageNet is a popular dataset containing 1.2 million images of 1000 different classes typically used to train object recognition models). Starting the training process with pre-trained weights is usually faster than starting from random weights because we only need to slightly modify them. This is because models pre-trained for other computer vision tasks contain weights that are highly transferable and we only need to **fine-tune** them. Moreover, complex models such as *ResNet50* need a lot of data to be trained from scratch. Model fine-tuning can typically be done using much less data provided that the model was pre-trained in a large enough dataset containing samples similar to ours.
 
@@ -401,7 +412,7 @@ Note that we are passing the `preprocess_input` function as a parameter to the g
 
 Thanks to the use of pre-trained weights, we only need to wait for 10 epochs to get an average angle error of 1-2 degrees! Let's look at some examples:
 
-![RotNet test examples from the Google Street View dataset.]({{ site.baseurl }}/img/image-orientation/street-view-test.png)
+![RotNet test examples from the Google Street View dataset.]({{ site.baseurl }}/img/image-orientation/street-view-test.jpg)
 
 In the examples above, you can see that even when there is no sky or road, the network is able to correctly predict the rotation angle. You can generate more examples like these using [this jupyter notebook](https://github.com/d4nst/RotNet/blob/master/test/test_street_view.ipynb)
 
