@@ -1,18 +1,19 @@
 # Site settings
 title: Daniel Saez
 header-img: img/header.png
-email: your-email@yourdomain.com
+email: danst.18@gmail.com
 copyright_name: Daniel Sáez Trigueros
-description: "Write your site description here. It will be used as your sites meta description as well!"
+description: "A singular blog"
 baseurl: ""
-url: "http://yourdomain.com"
+url: "https://d4nst.github.io/"
 github_username:  d4nst
 linkedin_username:  danielsaeztrigueros
-email_username:  danst.18@gmail.com
 
-# Google Analytics
-# To enable google analytics, uncomment below line with a valid Google Tracking ID
+# Google analytics
 # google_tracking_id:
+
+# Disqus shortname
+disqus: danst
 
 # Build settings
 markdown: kramdown
@@ -23,4 +24,3 @@ exclude: ["less","node_modules","Gruntfile.js","package.json","README.md"]
 
 gems: [jekyll-paginate, jekyll-feed]
 
-disqus: danst
