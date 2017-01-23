@@ -72,11 +72,11 @@ And with that, we finish the introduction to neural networks. It was a lot of in
 
 One of the things that I miss when I am watching or editing pictures is an option to automatically correct their orientation. Some software tools have the capability to straighten them, provided that the image is already in the right orientation. To illustrate that, let's take a look at the *Level* tool of *Adobe Photoshop Lightroom*. As you can see in the images below, this kind of tool can correct small rotations with high accuracy (look at the edge of the road as a reference for the horizon).
 
-![Left: Original image. Right: Image corrected with Lightroom's Level tool]({{ site.baseurl }}/img/image-orientation/sf.jpg)
+![Left: Original image. Right: Image corrected with Lightroom's Level tool.]({{ site.baseurl }}/img/image-orientation/sf.jpg)
 
 But what happens if the image is upside down? As you can imagine, similar to the previous case, the corrected image is simply a straight version of the original.
 
-![Left: Upside-down version of the original image. Right: Image corrected with Lightroom's Level tool]({{ site.baseurl }}/img/image-orientation/sf-upside-down.jpg)
+![Left: Upside-down version of the original image. Right: Image corrected with Lightroom's Level tool.]({{ site.baseurl }}/img/image-orientation/sf-upside-down.jpg)
 
 Tools like this make use of image processing techniques to look for horizontal edges in the image, and use them to rotate it in such a way that those edges are completely aligned with the horizon after the correction. 
 
@@ -102,7 +102,7 @@ In my experiments, the network trained as a classifier worked much better than t
 
 So now we know the format of our data, but how do we get it? Luckily, for this particular application we can easily generate it ourselves. We simple need images with an orientation angle as close as 0 degrees as possible. In this way, we can rotate the images on-the-fly and take the rotation angles as the labels. I have done experiments with two different datasets: the [MNIST database of handwritten digits](http://yann.lecun.com/exdb/mnist/) (don't worry, we are not going to classify them!) and the [Google Street View dataset](http://crcv.ucf.edu/data/GMCP_Geolocalization/). 
 
-![Left: Sample from the MNIST dataset. Right: Sample from the Google Street View dataset]({{ site.baseurl }}/img/image-orientation/mnist-street-view.jpg)
+![Left: Sample from the MNIST dataset. Right: Sample from the Google Street View dataset.]({{ site.baseurl }}/img/image-orientation/mnist-street-view.jpg)
 
 Keras makes it very easy to write data generators by extending one of the provided classes. In the code below you can see a basic implementation of a data generator that takes a NumPy array of input images, and produces batches of rotated images and their respective rotation angles on-the-fly. This generator can also preprocess the input images if needed. 
 
