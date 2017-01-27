@@ -109,12 +109,17 @@ Keras makes it very easy to write data generators by extending one of the provid
 ```python
 class RotNetDataGenerator(Iterator):
 
-    def __init__(self, input, batch_size=64, one_hot=True, 
+    def __init__(self, input, batch_size=64,
                  preprocess_func=None, shuffle=False):
 
         self.images = input
         self.batch_size = batch_size
         self.input_shape = self.images.shape[1:]
+        self.preprocess_func = preprocess_func
+        self.shuffle = shuffle
+        # add dimension if the images are greyscale
+        if len(self.input_shape) == 2:
+            self.input_shape = self.input_shape + (1,)
         N = self.images.shape[0]
 
         super(RotNetDataGenerator, self).__init__(N, batch_size, shuffle, None)
@@ -123,8 +128,8 @@ class RotNetDataGenerator(Iterator):
         with self.lock:
             # get input data index and size of the current batch
             index_array, _, current_batch_size = next(self.index_generator)
-        
-        # create array to hold the images 
+
+        # create array to hold the images
         batch_x = np.zeros((current_batch_size,) + self.input_shape, dtype='float32')
         # create array to hold the labels
         batch_y = np.zeros(current_batch_size, dtype='float32')
@@ -133,25 +138,31 @@ class RotNetDataGenerator(Iterator):
         for i, j in enumerate(index_array):
             image = self.images[j]
 
-            # get a random angle 
+            # get a random angle
             rotation_angle = np.random.randint(360)
 
             # rotate the image
-            rotated_image = rotate(image, rotation_angle, resize=False, preserve_range=True)
+            rotated_image = rotate(image, rotation_angle)
+
+            # add dimension to account for the channels if the image is greyscale
+            if rotated_image.ndim == 2:
+                rotated_image = np.expand_dims(rotated_image, axis=2)
 
             # store the image and label in their corresponding batches
             batch_x[i] = rotated_image
             batch_y[i] = rotation_angle
 
-            # convert the numerical labels to binary labels
-            batch_y = to_categorical(batch_y, 360)
+        # convert the numerical labels to binary labels
+        batch_y = to_categorical(batch_y, 360)
 
-            # preprocess input images
-            if self.preprocess_func:
-                batch_x = self.preprocess_func(batch_x)
+        # preprocess input images
+        if self.preprocess_func:
+            batch_x = self.preprocess_func(batch_x)
 
         return batch_x, batch_y
 ```
+
+Note that we need to add a new dimension to the images when they are greyscale in order to account for the channels. This is because Keras models expect input data with the following shape (assuming TensorFlow ordering): `(batch_size, input_rows, input_cols, input_channels)` 
 
 ## RotNet on MNIST 
 
@@ -162,17 +173,9 @@ Now that we know how to generate training images on-the-fly, we will do our firs
 (X_train, _), (X_test, _) = mnist.load_data()
 ```
 
-After loading the training and test sets, we need to add a new dimension to the data. Keras models expect input data with the following shape (assuming TensorFlow ordering): `(batch_size, input_rows, input_cols, input_channels)` and since the images in the MNIST dataset are greyscale, we need to add an extra dimension to account for the channels.
+The shape of the training set `X_train` is `(60000, 28, 28)`, and the shape of the test set `X_test` is  `(10000, 28, 28)`. In other words, we have 60,000 greyscale images of size 28 &times; 28 pixels for training and 10,000 of them for testing.
 
-```python
-# add dimension to account for the channels (assuming tensorflow ordering)
-X_train = np.expand_dims(X_train, axis=3).astype('float32')
-X_test = np.expand_dims(X_test, axis=3).astype('float32')
-```
-
-The shape of the training set `X_train` after adding the new dimension is `(60000, 28, 28, 1)`, and the shape of the test set `X_test` is  `(10000, 28, 28, 1)`. In other words, we have 60,000 greyscale images of size 28 &times; 28 pixels for training and 10,000 of them for testing.
-
-Now that we have loaded the data, let's define our first convolutional neural network. How do we do this? If you are a beginner, the easiest way is to copy the architecture used in another example. In this case, I am using the CNN architecture used in the [Keras example to classify the digits in the MNIST dataset](https://GitHub.com/fchollet/keras/blob/master/examples/mnist_cnn.py):
+After loading the data we can define our first convolutional neural network. How do we do this? If you are a beginner, the easiest way is to copy the architecture used in another example. In this case, I am using the CNN architecture used in the [Keras example to classify the digits in the MNIST dataset](https://GitHub.com/fchollet/keras/blob/master/examples/mnist_cnn.py):
 
 ```python
 # number of convolutional filters to use
@@ -263,11 +266,13 @@ After 50 epochs, the network achieves an **average angle error of 6-7 degrees** 
 # randomly rotate an image
 original_img = X_test[0]
 true_angle = np.random.randint(360)
-rotated_img = rotate(original_img, angle, preserve_range=True, resize=False)
-print('True angle: ', angle)
+rotated_img = rotate(original_img, true_angle)
+print('True angle: ', true_angle)
 
-# add dimension to account for the batch size
-rotated_img = np.expand_dims(rotated_img, axis=0)
+# add dimensions to account for the batch size and channels, 
+rotated_img = rotated_img[np.newaxis, :, :, np.newaxis]
+# convert to float
+rotated_img = rotated_img.astype('float32')
 # binarize image
 rotated_img_bin = binarize_images(rotated_img)
 # predict rotation angle
@@ -306,28 +311,21 @@ All of these operations can be achieved by replacing the `rotate` function in `R
 ```python
 def generate_rotated_image(image, angle, size=None, crop_center=False,
                            crop_largest_rect=False):
-    height, width, channels = image.shape
-
-    # crop center of the image
+    height, width = image.shape[:2]
     if crop_center:
-        crop_size = width if width < height else height
-        image = crop_around_center(image, crop_size, crop_size)
+        if width < height:
+            height = width
+        else:
+            width = height
+        image = crop_around_center(image, height, width)
 
-    # rotate the image
-    image = rotate(image, angle, resize=False, preserve_range=True)
+    image = rotate(image, angle)
 
-    # crop out black borders
     if crop_largest_rect:
-        image = crop_largest_rectangle(image, angle)
+        image = crop_largest_rectangle(image, angle, height, width)
 
-    # resize image
     if size:
-        new_width, new_height = size
-        image = resize(
-            image,
-            (new_width, new_height, channels),
-            preserve_range=True
-        )
+        image = cv2.resize(image, size)
 
     return image
 ```
