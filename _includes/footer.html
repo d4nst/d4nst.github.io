@@ -42,6 +42,16 @@
                         </a>
                     </li>
                     {% endif %}
+                    {% if site.scholar_username %}
+                    <li>
+                        <a href="https://scholar.google.co.uk/citations?user={{ site.scholar_username }}&hl=en">
+                            <span class="fa-stack fa-lg">
+                                <i class="fa fa-circle fa-stack-2x"></i>
+                                <i class="ai ai-google-scholar fa-stack-1x fa-inverse"></i>
+                            </span>
+                        </a>
+                    </li>
+                    {% endif %}
                     {% if site.linkedin_username %}
                     <li>
                         <a href="https://www.linkedin.com/in/{{ site.linkedin_username }}">
