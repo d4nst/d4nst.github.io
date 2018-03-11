@@ -48,7 +48,7 @@ The output of each neuron is simply a weighted sum of its inputs. Considering th
 $$
 \begin{align}
 y_1 = w_{11}x_1 + w_{21}x_2 + w_{31}x_3 \\
-y_2 = w_{12}x_2+ w_{22}x_2 + w_{32}x_3
+y_2 = w_{12}x_1 + w_{22}x_2 + w_{32}x_3
 \end{align}
 $$
 
